@@ -1,4 +1,6 @@
-var AMOUNT_CRYSTALS = 10;
+var AMOUNT_CRYSTALS = 15;
+var AMOUNT_METEORS = 30;
+var COUNT = 0;
 GamePlayManager ={
     init: function(){
         //Propiedad para que se haga responsive
@@ -8,6 +10,9 @@ GamePlayManager ={
         game.scale.pageAlignVertically = true;
         //Para que no se mueva
         this.flagFirstMouseDown = false;
+        this.amountCrystalsCaught = 0; //Variable que regsitra todos los crystales que vamos tomando
+        this.changeAction = false;
+        this.endGame = false;
     },
     preload: function(){
         //El background es el identificador de ese objeto
@@ -15,15 +20,31 @@ GamePlayManager ={
         //Cargar el sprite
         game.load.spritesheet('robotParado','assets/images/robot/Idle (10).png');
         game.load.spritesheet('robotVolando','assets/images/robot/Jump (2).png');
+        game.load.spritesheet('robotGanar','assets/images/robot/Jump (7).png');
         game.load.spritesheet('crystalSingle','assets/images/items/Crystal_02.png');
         game.load.spritesheet('crystalHuge','assets/images/items/Crystal_03.png');
         game.load.spritesheet('skrull','assets/images/items/Enemy_Destroy_Bonus.png');
         game.load.spritesheet('heart','assets/images/items/Hp_Bonus.png');
         game.load.spritesheet('explosion1','assets/images/items/Bomb_1_Explosion_003.png');
+        game.load.spritesheet('meteoro1','assets/images/items/Meteor_02.png');
+        game.load.spritesheet('meteoro2','assets/images/items/Meteor_07.png');
+        game.load.spritesheet('misile','assets/images/items/Missile_2_Flying_000.png');
     },
     create: function(){
         //Para ponerlo en pantalla
         game.add.sprite(0,0,'background');
+        this.meteors = [];
+        for (let index = 0; index < AMOUNT_METEORS; index++) {
+            var xMeteors = game.rnd.integerInRange(1,1140);
+            var yMeteors = game.rnd.integerInRange(600,950);
+            var meteor = game.add.sprite(xMeteors,yMeteors,'meteoro'+ game.rnd.integerInRange(1,2));
+            meteor.vel = 0.2 + game.rnd.frac()*2;
+            meteor.alpha = 0.9;
+            meteor.scale.setTo((Math.random()).toFixed(1));
+            this.meteors[index] = meteor;
+        }
+        this.misile = game.add.sprite(500,700,'misile');
+        this.misile.scale.setTo(0.5);
         //Para guardar la instancia en un variable se usa el this.
         this.robot = game.add.sprite(0,0,'robotParado');
         this.robot.scale.setTo(0.3);
@@ -51,24 +72,84 @@ GamePlayManager ={
         }
 
         this.explosionGroup = game.add.group();
-        this.explosionGroup.create('explosion1');
+        
+        for (let index = 0; index < 5; index++) {
+            this.explosion = this.explosionGroup.create(100,100,'explosion1');
+            //BOMBAZO
+            this.explosion.tweenScale = game.add.tween(this.explosion.scale).to({
+                x:[0.4,0.8,0.4],
+                y:[0.4,0.8,0.4]
+            },600, Phaser.Easing.Exponential.Out,false,0,0,false);
+            //BOMBITA
+            // this.explosion.tweenScale = game.add.tween(this.explosion.scale.setTo(0.2),600, Phaser.Easing.Exponential.Out,false,0,0,false);
+    
+            this.explosion.tweenAlpha = game.add.tween(this.explosion).to({
+                alpha:[1,0.6,0]
+            },600, Phaser.Easing.Exponential.Out,false,0,0,false);
+            this.explosion.anchor.setTo(0.5);
+            this.explosion.kill(); //lo hace invisible y disponible para hacer uso
+        }
 
-        this.explosion = game.add.sprite(100,100,'explosion1');
-        //BOMBAZO
-        this.explosion.tweenScale = game.add.tween(this.explosion.scale).to({
-            x:[0.4,0.8,0.4],
-            y:[0.4,0.8,0.4]
-        },600, Phaser.Easing.Exponential.Out,false,0,0,false);
-        //BOMBITA
-        // this.explosion.tweenScale = game.add.tween(this.explosion.scale.setTo(0.2),600, Phaser.Easing.Exponential.Out,false,0,0,false);
+        //TEXT SCORE
+        this.currentScore = 0;
+        var style = {
+            font:'bold 30pt Arial',
+            fill: '#FFFFFF',
+            align: 'center'
+        }
+        this.scoreText = game.add.text(game.width/2,40,'0',style);
+        this.scoreText.anchor.setTo(0.5);
 
-        this.explosion.tweenAlpha = game.add.tween(this.explosion).to({
-            alpha:[1,0.6,0]
-        },600, Phaser.Easing.Exponential.Out,false,0,0,false);
-        this.explosion.anchor.setTo(0.5);
-        this.explosion.visible = false; 
+        //TEXT COUNTDOWN
+        this.totalTime = 10;
+        this.timerText = game.add.text(1000,40,this.totalTime,style);
+        this.scoreText.anchor.setTo(0.5);
+
+        this.timerGameOver = game.time.events.loop(Phaser.Timer.SECOND,()=>{
+            if(this.flagFirstMouseDown){
+                this.totalTime--;
+                this.timerText.text = this.totalTime+'';//Para convertir e lINTEGER EN STRING
+                if(this.totalTime<=0){
+                    game.time.events.remove(this.timerGameOver);
+                    this.endGame = true;
+                    this.showFinalMessage('SE ACABÓ EL JUEGO');
+                }
+            }
+        },this);
+    },
+    increaseScore:function(){
+        this.currentScore+= 100;
+        this.scoreText.text = this.currentScore;
+        this.changeAction = true;
+        this.robot.loadTexture('robotGanar');
+        this.amountCrystalsCaught += 1;
+        if(this.amountCrystalsCaught >= AMOUNT_CRYSTALS){
+            game.time.events.remove(this.timerGameOver);
+            this.showFinalMessage('FELICITACIONES');
+            this.endGame = true;
+        }
+    },
+    showFinalMessage:function (message) {
+        //this.tweenMisile.stop();
+        var bgAlpha = game.add.bitmapData(game.width,game.height);
+        bgAlpha.ctx.fillStyle = '#000000';
+        bgAlpha.ctx.fillRect(0,0,game.width,game.height);
+        var bg = game.add.sprite(0,0,bgAlpha);
+        bg.alpha = 0.5;
+
+        var styleBg = {
+            font:'bold 60pt Arial',
+            fill: '#FFFFFF',
+            align: 'center'
+        }
+
+        this.textFieldFinalMsg = game.add.text(game.width/2,game.height/2,message,styleBg);
+        this.textFieldFinalMsg.anchor.setTo(0.5);
     },
     onTap: function () {
+        if(!this.flagFirstMouseDown){
+            // this.tweenMisile = game.add.tween(this.misile.position).to({y:-100},5800,Phaser.Easing.Cubic.Input,true,0,1000,true).loop(true);
+        }
         this.flagFirstMouseDown = true;
         //En phaser 2 se usa load Texture en phaser 3 setTexture
         this.robot.loadTexture('robotVolando');
@@ -113,7 +194,22 @@ GamePlayManager ={
     //     }
     // },
     update: function(){
-        if (this.flagFirstMouseDown) {
+        if (this.flagFirstMouseDown && !this.endGame) {
+            if(this.changeAction){
+                game.time.events.add(Phaser.Timer.SECOND * 1, ()=>{
+                    this.changeAction = false;
+                    this.robot.loadTexture('robotVolando');
+                }, this); 
+            }
+            for (let index = 0; index < AMOUNT_METEORS; index++) {
+                var meteor = this.meteors[index];
+                meteor.y -= meteor.vel;
+                if(meteor.y < -50){
+                    meteor.y = 700;
+                    meteor.x = game.rnd.integerInRange(1,11);
+                }
+                
+            }
             var pointerX = game.input.x;
             var pointerY = game.input.y;
             //Calcular la distancia entre el robot y el cursor.
@@ -135,12 +231,15 @@ GamePlayManager ={
                 var rectCrystal = this.getBoundsCrystal(this.crystals[index]);
 
                 if (this.crystals[index].visible && this.isRectangleOverlapping(rectRobot,rectCrystal)) {
+                    this.increaseScore();
                     this.crystals[index].visible = false;
-                    this.explosion.visible = true;
-                    this.explosion.x = this.crystals[index].x;
-                    this.explosion.y = this.crystals[index].y;
-                    this.explosion.tweenScale.start();
-                    this.explosion.tweenAlpha.start();
+                    var explosion = this.explosionGroup.getFirstDead();
+                    if (explosion!=null) {     
+                        explosion.reset(this.crystals[index].x,this.crystals[index].y);
+                        explosion.tweenScale.start();
+                        explosion.tweenAlpha.start();
+                        explosion.tweenAlpha.onComplete.add((currentTarget,currentTween)=>currentTarget.kill(),this);
+                    }
                 }
                 
             }
